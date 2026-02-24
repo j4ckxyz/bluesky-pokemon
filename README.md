@@ -15,6 +15,7 @@ Pokemon Red is the default setup, but you can point it at another ROM and set `G
 - Near-real-time turns: resolves shortly after replies arrive.
 - Reminder repost when no valid reply arrives by max turn timeout.
 - Old scene replies are closed once a new scene is posted.
+- Each new scene quotes the previous scene post, creating a visible progress chain.
 - Screenshot embeds include alt text and runtime stats.
 - Hourly save writes + rolling backup retention.
 

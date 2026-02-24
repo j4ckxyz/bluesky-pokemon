@@ -221,6 +221,7 @@ export class PokemonBlueskyBot {
         text: sceneText,
         imagePng: image,
         alt: altText,
+        quotePost: previousScene,
       });
 
       this.state.latestScene = nextScene;

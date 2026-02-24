@@ -17,6 +17,7 @@ interface PostSceneOptions {
   text: string;
   imagePng: Uint8Array;
   alt: string;
+  quotePost?: PostRef;
 }
 
 function extractTagsFromText(text: string): string[] {
@@ -107,24 +108,40 @@ export class BlueskyService {
     await rt.detectFacets(this.agent);
 
     const uploaded = await this.agent.uploadBlob(options.imagePng, { encoding: "image/png" });
+    const imageEmbed = {
+      $type: "app.bsky.embed.images",
+      images: [
+        {
+          alt: options.alt,
+          image: uploaded.data.blob,
+          aspectRatio: {
+            width: 160,
+            height: 144,
+          },
+        },
+      ],
+    };
+
+    const embed = options.quotePost
+      ? {
+          $type: "app.bsky.embed.recordWithMedia",
+          record: {
+            $type: "app.bsky.embed.record",
+            record: {
+              uri: options.quotePost.uri,
+              cid: options.quotePost.cid,
+            },
+          },
+          media: imageEmbed,
+        }
+      : imageEmbed;
+
     const created = await this.agent.post({
       text: rt.text,
       facets: rt.facets,
       langs: this.config.langs,
       tags: extractTagsFromText(options.text),
-      embed: {
-        $type: "app.bsky.embed.images",
-        images: [
-          {
-            alt: options.alt,
-            image: uploaded.data.blob,
-            aspectRatio: {
-              width: 160,
-              height: 144,
-            },
-          },
-        ],
-      },
+      embed,
     });
 
     return {
