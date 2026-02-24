@@ -1,0 +1,9 @@
+services:
+  bluesky-pokemon:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./roms:/app/roms:ro

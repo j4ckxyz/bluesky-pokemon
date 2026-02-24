@@ -1,0 +1,19 @@
+[Unit]
+Description=Bluesky Pokemon Bot (Pokemon Red)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change these to the user/group that owns the repo.
+User=blueskybot
+Group=blueskybot
+WorkingDirectory=/opt/bluesky-pokemon
+EnvironmentFile=/opt/bluesky-pokemon/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/bun run start
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
