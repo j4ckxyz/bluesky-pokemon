@@ -27,8 +27,7 @@ Pokemon Red is the default setup, but you can point it at another ROM and set `G
 4. After first valid reply, wait `6s` more for additional votes (`SETTLE_AFTER_FIRST_REPLY_SECONDS`).
 5. Resolve winner and post next scene.
 6. If no valid reply by `2m` (`MAX_TURN_MINUTES`), repost a reminder.
-7. If no valid reply and scene is static for `20s`, auto-advance loading/static frames (`IDLE_AUTO_SKIP_SECONDS`).
-8. Auto-skip status posts are throttled (`AUTO_SKIP_POST_COOLDOWN_SECONDS`) to avoid feed spam during loading.
+7. If there are no valid replies, the bot does not advance gameplay on its own.
 
 This keeps gameplay much faster than fixed 15-minute turns while still letting multiple people vote.
 
@@ -133,7 +132,6 @@ journalctl -u bluesky-pokemon -f
 | `ROM_PATH` | No | `./roms/pokemon-red.gb` | ROM location. |
 | `SAVE_BASENAME` | No | ROM filename | Save/backup file prefix. |
 | `POLL_INTERVAL_SECONDS` | No | `20` | Reply polling interval. |
-| `IDLE_AUTO_SKIP_SECONDS` | No | `45` | With no valid replies, delay before auto-skipping static/loading scenes. |
 | `MIN_TURN_SECONDS` | No | `30` | Minimum wait after scene post before resolving. |
 | `SETTLE_AFTER_FIRST_REPLY_SECONDS` | No | `20` | Vote collection window after first valid reply. |
 | `MAX_TURN_MINUTES` | No | `15` | Max wait before reminder repost. |
@@ -142,10 +140,6 @@ journalctl -u bluesky-pokemon -f
 | `FRAMES_PER_TURN` | No | `120` | Frames advanced per selected move. |
 | `BUTTON_HOLD_FRAMES` | No | `3` | Frames to hold chosen button. |
 | `INITIAL_WARMUP_FRAMES` | No | `24` | Frames run before first scene post. |
-| `AUTO_SKIP_STATIC_SCREENS` | No | `true` | If enabled, auto-advances extra frames when a move lands on a static/loading scene. |
-| `AUTO_SKIP_MAX_FRAMES` | No | `900` | Max extra no-input frames per turn for static/loading auto-skip. |
-| `AUTO_SKIP_STEP_FRAMES` | No | `120` | Chunk size for each auto-skip advance step. |
-| `AUTO_SKIP_POST_COOLDOWN_SECONDS` | No | `180` | Minimum seconds between no-vote auto-skip scene posts. |
 | `POST_LANGS` | No | `en` | Post language tags (comma-separated). |
 | `POST_HASHTAGS` | No | Derived from game title + generic tags | Hidden Bluesky `tags` added to posts for discoverability. |
 | `REPOST_EVERY_TICK` | No | `false` | If `true`, repost reminder every poll cycle once max wait is exceeded. |
@@ -156,8 +150,7 @@ journalctl -u bluesky-pokemon -f
 - Uses `RichText.detectFacets()` for proper facets (links/mentions/hashtags in text).
 - Adds `.env` `POST_HASHTAGS` as Bluesky `tags` by default (hidden/outline hashtags, no visible hashtag line).
 - Uploads scene PNG as `app.bsky.embed.images` with alt text.
-- Auto-skips static/loading scenes by fast-forwarding no-input frames after a move (enabled by default, configurable).
-- Throttles no-vote auto-skip scene posts to keep the feed readable during long loading sequences.
+- Advances gameplay only when at least one valid human reply vote is present.
 - Uses `app.bsky.feed.threadgate` with empty `allow` to close old scene replies.
 - Pins a controls post on the account profile.
 

@@ -1,12 +1,11 @@
-import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { BlueskyService } from "./bluesky";
 import type { AppConfig } from "./config";
 import { commandLabel, parseNaturalCommand, selectWinningVote } from "./controls";
-import { type CapturedFrame, GameboyRunner } from "./gameboy-runner";
+import { GameboyRunner } from "./gameboy-runner";
 import { createDefaultState, loadState, saveState } from "./state-store";
-import { BUTTON_COMMANDS, type BotState, type ButtonCommand, type ParsedVote, type VoteResult } from "./types";
+import { type BotState, type ButtonCommand, type ParsedVote, type VoteResult } from "./types";
 
 const FPS_ESTIMATE = 60;
 
@@ -26,25 +25,6 @@ function formatDurationFromFrames(frames: number): string {
   return formatDurationMs((frames / FPS_ESTIMATE) * 1000);
 }
 
-function formatVotes(voteResult: VoteResult): string {
-  const labels: Record<ButtonCommand, string> = {
-    A: "A",
-    B: "B",
-    UP: "U",
-    DOWN: "D",
-    LEFT: "L",
-    RIGHT: "R",
-    SELECT: "SELECT",
-    START: "START",
-  };
-
-  return BUTTON_COMMANDS.filter((command) => voteResult.voteBreakdown[command] > 0)
-    .sort((left, right) => voteResult.voteBreakdown[right] - voteResult.voteBreakdown[left])
-    .slice(0, 4)
-    .map((command) => `${labels[command]} ${voteResult.voteBreakdown[command]}`)
-    .join(", ");
-}
-
 function pluralize(count: number, singular: string, plural: string): string {
   return count === 1 ? singular : plural;
 }
@@ -55,10 +35,6 @@ function safeDateMs(value: string | undefined): number {
   }
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : 0;
-}
-
-function hashFrameRgba(rgba: Uint8Array): string {
-  return createHash("sha1").update(rgba).digest("hex");
 }
 
 function dedupeVotesByAuthor(votes: ParsedVote[]): ParsedVote[] {
@@ -107,9 +83,6 @@ export class PokemonBlueskyBot {
 
     await this.bluesky.login();
     await this.emulator.initialize(this.config.savePath);
-    if (this.state.latestScene && !this.state.latestSceneHash) {
-      this.state.latestSceneHash = hashFrameRgba(this.emulator.captureFrame().rgba);
-    }
 
     await this.ensureControlsPostPinned();
     await saveState(this.config.statePath, this.state);
@@ -191,14 +164,6 @@ export class PokemonBlueskyBot {
       const turnStartMs = this.getTurnStartMs();
 
       if (dedupedVotes.length === 0) {
-        if (this.shouldAttemptIdleAutoSkip(turnStartMs)) {
-          const autoAdvanceOutcome = await this.tryAutoSkipWithoutVote();
-          if (autoAdvanceOutcome !== "none") {
-            await saveState(this.config.statePath, this.state);
-            return;
-          }
-        }
-
         const reminderDue = this.shouldSendReminder(turnStartMs);
         if (reminderDue) {
           await this.handleNoVoteReminder();
@@ -228,32 +193,9 @@ export class PokemonBlueskyBot {
       this.state.totalTurns += 1;
       this.state.lastCommand = winningVote.command;
 
-      const previousSceneHash = this.state.latestSceneHash;
-      let autoSkippedFrames = 0;
-      let capturedFrame = this.emulator.captureFrame();
-      let currentSceneHash = hashFrameRgba(capturedFrame.rgba);
-
-      if (
-        this.config.autoSkipStaticScreens &&
-        previousSceneHash &&
-        currentSceneHash === previousSceneHash
-      ) {
-        const skipResult = this.fastForwardStaticScreen(previousSceneHash, capturedFrame, currentSceneHash);
-        autoSkippedFrames = skipResult.framesAdvanced;
-        capturedFrame = skipResult.frame;
-        currentSceneHash = skipResult.hash;
-
-        if (autoSkippedFrames > 0) {
-          this.state.totalFrames += autoSkippedFrames;
-          this.log(
-            `Auto-skipped ${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")} on a static scene.`,
-          );
-        }
-      }
-
-      const sceneText = this.buildSceneText(winningVote, autoSkippedFrames);
+      const sceneText = this.buildSceneText(winningVote);
       const altText = this.buildAltText(winningVote.command);
-      const image = capturedFrame.png;
+      const image = this.emulator.capturePng();
       await Bun.write(this.config.latestFramePath, image);
 
       const previousScene = this.state.latestScene;
@@ -265,8 +207,6 @@ export class PokemonBlueskyBot {
       });
 
       this.state.latestScene = nextScene;
-      this.state.latestSceneHash = currentSceneHash;
-      this.state.lastAutoSkipPostAt = undefined;
       this.state.lastTickAt = new Date().toISOString();
       this.state.latestScenePostedAt = this.state.lastTickAt;
 
@@ -356,8 +296,7 @@ export class PokemonBlueskyBot {
     const warmedFrames = this.emulator.advanceFrames(this.config.initialWarmupFrames);
     this.state.totalFrames += warmedFrames;
 
-    const frame = this.emulator.captureFrame();
-    const image = frame.png;
+    const image = this.emulator.capturePng();
     await Bun.write(this.config.latestFramePath, image);
 
     const post = await this.bluesky.postScene({
@@ -367,8 +306,6 @@ export class PokemonBlueskyBot {
     });
 
     this.state.latestScene = post;
-    this.state.latestSceneHash = hashFrameRgba(frame.rgba);
-    this.state.lastAutoSkipPostAt = undefined;
     this.state.lastTickAt = new Date().toISOString();
     this.state.latestScenePostedAt = this.state.lastTickAt;
   }
@@ -394,19 +331,9 @@ export class PokemonBlueskyBot {
     return lines.join("\n");
   }
 
-  private buildSceneText(voteResult: VoteResult, autoSkippedFrames: number): string {
-    const skipSuffix =
-      autoSkippedFrames > 0 ? ` • +${autoSkippedFrames.toLocaleString()} skip` : "";
+  private buildSceneText(voteResult: VoteResult): string {
     return [
-      `T${this.state.totalTurns} • ${commandLabel(voteResult.command)} (${voteResult.voteCount} ${pluralize(voteResult.voteCount, "vote", "votes")})${skipSuffix}`,
-      `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)})`,
-      "Reply with the next move.",
-    ].join("\n");
-  }
-
-  private buildAutoAdvancedSceneText(autoSkippedFrames: number): string {
-    return [
-      `T${this.state.totalTurns} • Auto-skip loading (+${autoSkippedFrames.toLocaleString()}f)`,
+      `T${this.state.totalTurns} • ${commandLabel(voteResult.command)} (${voteResult.voteCount} ${pluralize(voteResult.voteCount, "vote", "votes")})`,
       `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)})`,
       "Reply with the next move.",
     ].join("\n");
@@ -439,100 +366,6 @@ export class PokemonBlueskyBot {
     );
     this.state.lastSaveAt = new Date(nowMs).toISOString();
     this.log("Saved battery-backed save data.");
-  }
-
-  private fastForwardStaticScreen(
-    referenceHash: string,
-    currentFrame: CapturedFrame,
-    currentHash: string,
-  ): { framesAdvanced: number; frame: CapturedFrame; hash: string } {
-    let framesAdvanced = 0;
-    let frame = currentFrame;
-    let hash = currentHash;
-
-    while (framesAdvanced < this.config.autoSkipMaxFrames && hash === referenceHash) {
-      const stepFrames = Math.min(this.config.autoSkipStepFrames, this.config.autoSkipMaxFrames - framesAdvanced);
-      framesAdvanced += this.emulator.advanceFrames(stepFrames);
-      frame = this.emulator.captureFrame();
-      hash = hashFrameRgba(frame.rgba);
-    }
-
-    return { framesAdvanced, frame, hash };
-  }
-
-  private shouldAttemptIdleAutoSkip(turnStartMs: number, nowMs = Date.now()): boolean {
-    if (!this.config.autoSkipStaticScreens) {
-      return false;
-    }
-    if (turnStartMs <= 0) {
-      return false;
-    }
-    return nowMs - turnStartMs >= this.config.idleAutoSkipMs;
-  }
-
-  private async tryAutoSkipWithoutVote(): Promise<"none" | "advanced" | "posted"> {
-    const previousScene = this.state.latestScene;
-    const previousSceneHash = this.state.latestSceneHash;
-    if (!previousScene || !previousSceneHash) {
-      return "none";
-    }
-
-    const capturedFrame = this.emulator.captureFrame();
-    const currentSceneHash = hashFrameRgba(capturedFrame.rgba);
-    if (currentSceneHash !== previousSceneHash) {
-      this.state.latestSceneHash = currentSceneHash;
-      return "none";
-    }
-
-    const skipResult = this.fastForwardStaticScreen(previousSceneHash, capturedFrame, currentSceneHash);
-    if (skipResult.framesAdvanced <= 0 || skipResult.hash === previousSceneHash) {
-      return "none";
-    }
-
-    const nowMs = Date.now();
-    const nowIso = new Date(nowMs).toISOString();
-    const lastAutoSkipPostMs = safeDateMs(this.state.lastAutoSkipPostAt);
-    const withinPostCooldown =
-      lastAutoSkipPostMs > 0 && nowMs - lastAutoSkipPostMs < this.config.autoSkipPostCooldownMs;
-
-    this.state.totalFrames += skipResult.framesAdvanced;
-    this.state.latestSceneHash = skipResult.hash;
-
-    if (withinPostCooldown) {
-      this.state.lastTickAt = nowIso;
-      await this.maybeSaveGame();
-      this.log(
-        `Auto-advanced ${skipResult.framesAdvanced.toLocaleString()} idle ${pluralize(skipResult.framesAdvanced, "frame", "frames")} (post suppressed by cooldown).`,
-      );
-      return "advanced";
-    }
-
-    const sceneText = this.buildAutoAdvancedSceneText(skipResult.framesAdvanced);
-    const altText = this.buildAltText(this.state.lastCommand);
-    const image = skipResult.frame.png;
-    await Bun.write(this.config.latestFramePath, image);
-
-    await this.clearReminderRepost();
-
-    const nextScene = await this.bluesky.postScene({
-      text: sceneText,
-      imagePng: image,
-      alt: altText,
-      quotePost: previousScene,
-    });
-
-    this.state.latestScene = nextScene;
-    this.state.lastAutoSkipPostAt = nowIso;
-    this.state.lastTickAt = nowIso;
-    this.state.latestScenePostedAt = nowIso;
-
-    await this.closeRepliesSafely(previousScene.uri);
-    await this.maybeSaveGame();
-
-    this.log(
-      `Auto-advanced ${skipResult.framesAdvanced.toLocaleString()} idle ${pluralize(skipResult.framesAdvanced, "frame", "frames")} after no-vote static scene.`,
-    );
-    return "posted";
   }
 
   private getTurnStartMs(): number {

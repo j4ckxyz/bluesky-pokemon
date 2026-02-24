@@ -20,17 +20,12 @@ export interface AppConfig {
   saveBackupKeep: number;
   pollIntervalMs: number;
   maxTurnMs: number;
-  idleAutoSkipMs: number;
   minTurnMs: number;
   settleAfterFirstReplyMs: number;
   saveIntervalMs: number;
   framesPerTurn: number;
   buttonHoldFrames: number;
   initialWarmupFrames: number;
-  autoSkipStaticScreens: boolean;
-  autoSkipMaxFrames: number;
-  autoSkipStepFrames: number;
-  autoSkipPostCooldownMs: number;
   langs: string[];
   hashtags: string[];
   repostEveryTick: boolean;
@@ -135,7 +130,6 @@ export function loadConfig(): AppConfig {
 
   const pollIntervalSeconds = parsePositiveInt("POLL_INTERVAL_SECONDS", 20);
   const maxTurnMinutes = parsePositiveInt("MAX_TURN_MINUTES", parsePositiveInt("TURN_INTERVAL_MINUTES", 15));
-  const idleAutoSkipSeconds = parsePositiveInt("IDLE_AUTO_SKIP_SECONDS", 45);
   const minTurnSeconds = parsePositiveInt("MIN_TURN_SECONDS", 30);
   const settleAfterFirstReplySeconds = parsePositiveInt("SETTLE_AFTER_FIRST_REPLY_SECONDS", 20);
   const saveIntervalMinutes = parsePositiveInt("SAVE_INTERVAL_MINUTES", 60);
@@ -143,10 +137,6 @@ export function loadConfig(): AppConfig {
   const framesPerTurn = parsePositiveInt("FRAMES_PER_TURN", 120);
   const buttonHoldFrames = parsePositiveInt("BUTTON_HOLD_FRAMES", 3);
   const initialWarmupFrames = parsePositiveInt("INITIAL_WARMUP_FRAMES", 24);
-  const autoSkipStaticScreens = parseBoolean("AUTO_SKIP_STATIC_SCREENS", true);
-  const autoSkipMaxFrames = parsePositiveInt("AUTO_SKIP_MAX_FRAMES", 900);
-  const autoSkipStepFrames = parsePositiveInt("AUTO_SKIP_STEP_FRAMES", 120);
-  const autoSkipPostCooldownSeconds = parsePositiveInt("AUTO_SKIP_POST_COOLDOWN_SECONDS", 180);
 
   if (buttonHoldFrames > framesPerTurn) {
     throw new Error("BUTTON_HOLD_FRAMES cannot be greater than FRAMES_PER_TURN");
@@ -172,17 +162,12 @@ export function loadConfig(): AppConfig {
     saveBackupKeep,
     pollIntervalMs: pollIntervalSeconds * 1000,
     maxTurnMs: maxTurnMinutes * 60_000,
-    idleAutoSkipMs: idleAutoSkipSeconds * 1000,
     minTurnMs: minTurnSeconds * 1000,
     settleAfterFirstReplyMs: settleAfterFirstReplySeconds * 1000,
     saveIntervalMs: saveIntervalMinutes * 60_000,
     framesPerTurn,
     buttonHoldFrames,
     initialWarmupFrames,
-    autoSkipStaticScreens,
-    autoSkipMaxFrames,
-    autoSkipStepFrames,
-    autoSkipPostCooldownMs: autoSkipPostCooldownSeconds * 1000,
     langs: parseList("POST_LANGS", DEFAULT_LANGS),
     hashtags: normalizeHashtags(parseList("POST_HASHTAGS", []), gameTitle),
     repostEveryTick: parseBoolean("REPOST_EVERY_TICK", false),

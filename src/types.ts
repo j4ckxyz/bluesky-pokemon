@@ -24,8 +24,6 @@ export interface BotState {
   lastCommand?: ButtonCommand;
   controlsPost?: PostRef;
   latestScene?: PostRef;
-  latestSceneHash?: string;
-  lastAutoSkipPostAt?: string;
   activeReminderRepostUri?: string;
   lastSaveAt?: string;
   lastTickAt?: string;
