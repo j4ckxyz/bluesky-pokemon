@@ -6,17 +6,20 @@ interface BlueskyServiceConfig {
   appPassword: string;
   serviceUrl: string;
   langs: string[];
+  defaultTags: string[];
   dryRun: boolean;
 }
 
 interface PostTextOptions {
   text: string;
+  tags?: string[];
 }
 
 interface PostSceneOptions {
   text: string;
   imagePng: Uint8Array;
   alt: string;
+  tags?: string[];
   quotePost?: PostRef;
 }
 
@@ -33,6 +36,22 @@ function extractTagsFromText(text: string): string[] {
   }
 
   return Array.from(tags);
+}
+
+function normalizeTag(tag: string): string {
+  return tag.replace(/^#+/, "").trim();
+}
+
+function buildTags(text: string, explicitTags: string[], defaultTags: string[]): string[] {
+  const merged = new Set<string>();
+  for (const rawTag of [...defaultTags, ...explicitTags, ...extractTagsFromText(text)]) {
+    const normalizedTag = normalizeTag(rawTag);
+    if (!normalizedTag) {
+      continue;
+    }
+    merged.add(normalizedTag);
+  }
+  return Array.from(merged);
 }
 
 function isThreadViewPost(value: unknown): value is {
@@ -86,11 +105,13 @@ export class BlueskyService {
     const rt = new RichText({ text: options.text });
     await rt.detectFacets(this.agent);
 
+    const tags = buildTags(options.text, options.tags ?? [], this.config.defaultTags);
+
     const created = await this.agent.post({
       text: rt.text,
       facets: rt.facets,
       langs: this.config.langs,
-      tags: extractTagsFromText(options.text),
+      tags: tags.length > 0 ? tags : undefined,
     });
 
     return {
@@ -106,6 +127,8 @@ export class BlueskyService {
 
     const rt = new RichText({ text: options.text });
     await rt.detectFacets(this.agent);
+
+    const tags = buildTags(options.text, options.tags ?? [], this.config.defaultTags);
 
     const uploaded = await this.agent.uploadBlob(options.imagePng, { encoding: "image/png" });
     const imageEmbed = {
@@ -140,7 +163,7 @@ export class BlueskyService {
       text: rt.text,
       facets: rt.facets,
       langs: this.config.langs,
-      tags: extractTagsFromText(options.text),
+      tags: tags.length > 0 ? tags : undefined,
       embed,
     });
 

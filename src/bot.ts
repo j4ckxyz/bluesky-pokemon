@@ -84,6 +84,7 @@ export class PokemonBlueskyBot {
       appPassword: this.config.appPassword,
       serviceUrl: this.config.serviceUrl,
       langs: this.config.langs,
+      defaultTags: this.config.hashtags,
       dryRun: this.config.dryRun,
     });
   }
@@ -335,7 +336,6 @@ export class PokemonBlueskyBot {
       "U/D/L/R=move (say: go left)",
       "START=menu SELECT=select",
       "Reply naturally to scene posts. Moves resolve shortly after replies arrive.",
-      this.hashtagLine(),
     ];
 
     return lines.join("\n");
@@ -346,7 +346,6 @@ export class PokemonBlueskyBot {
       `${this.config.gameTitle} is live.`,
       `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)}`,
       "Reply with the next move in plain language (for example: go right, press A, open menu). Controls are pinned.",
-      this.hashtagLine(),
     ];
 
     return lines.join("\n");
@@ -360,7 +359,6 @@ export class PokemonBlueskyBot {
       `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)} | Uptime: ${formatDurationMs(uptimeMs)}`,
       `Vote split: ${formatVotes(voteResult)}`,
       "Reply with the next move in natural language (example: go up, press A, back button). Controls are pinned.",
-      this.hashtagLine(),
     ];
 
     return lines.join("\n");
@@ -375,10 +373,6 @@ export class PokemonBlueskyBot {
       `Most recent chosen control: ${moveText}.`,
       "Players should reply with the next move.",
     ].join(" ");
-  }
-
-  private hashtagLine(): string {
-    return this.config.hashtags.map((tag) => `#${tag}`).join(" ");
   }
 
   private async maybeSaveGame(): Promise<void> {

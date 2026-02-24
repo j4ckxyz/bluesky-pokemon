@@ -140,14 +140,14 @@ journalctl -u bluesky-pokemon -f
 | `BUTTON_HOLD_FRAMES` | No | `3` | Frames to hold chosen button. |
 | `INITIAL_WARMUP_FRAMES` | No | `24` | Frames run before first scene post. |
 | `POST_LANGS` | No | `en` | Post language tags (comma-separated). |
-| `POST_HASHTAGS` | No | Derived from game title + generic tags | Hashtags added to posts. |
+| `POST_HASHTAGS` | No | Derived from game title + generic tags | Hidden Bluesky `tags` added to posts for discoverability. |
 | `REPOST_EVERY_TICK` | No | `false` | If `true`, repost reminder every poll cycle once max wait is exceeded. |
 | `DRY_RUN` | No | `false` | Runs without posting to Bluesky. |
 
 ## Bluesky behavior details
 
-- Uses `RichText.detectFacets()` for proper facets (links/mentions/hashtags).
-- Includes `tags` and hashtag text for discoverability.
+- Uses `RichText.detectFacets()` for proper facets (links/mentions/hashtags in text).
+- Adds `.env` `POST_HASHTAGS` as Bluesky `tags` by default (hidden/outline hashtags, no visible hashtag line).
 - Uploads scene PNG as `app.bsky.embed.images` with alt text.
 - Uses `app.bsky.feed.threadgate` with empty `allow` to close old scene replies.
 - Pins a controls post on the account profile.

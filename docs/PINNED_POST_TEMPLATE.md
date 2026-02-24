@@ -25,7 +25,6 @@ Turn rules:
 - Turn resolves shortly after valid replies arrive
 
 Reply on the latest scene post to play.
-#[GAME_TAG] #BlueskyPlaysGameBoy #GameBoy
 ```
 
 ## Short Variant
@@ -38,5 +37,6 @@ A, B, U, D, L, R, SELECT, START
 
 One vote per person per turn.
 Most votes wins. Ties are random.
-#[GAME_TAG] #BlueskyPlaysGameBoy #GameBoy
 ```
+
+Note: the bot can apply discoverability hashtags as hidden Bluesky tags via `POST_HASHTAGS`, so you do not need visible hashtag text in this pinned post.
