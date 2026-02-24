@@ -131,6 +131,7 @@ journalctl -u bluesky-pokemon -f
 | `ROM_PATH` | No | `./roms/pokemon-red.gb` | ROM location. |
 | `SAVE_BASENAME` | No | ROM filename | Save/backup file prefix. |
 | `POLL_INTERVAL_SECONDS` | No | `20` | Reply polling interval. |
+| `IDLE_AUTO_SKIP_SECONDS` | No | `45` | With no valid replies, delay before auto-skipping static/loading scenes. |
 | `MIN_TURN_SECONDS` | No | `30` | Minimum wait after scene post before resolving. |
 | `SETTLE_AFTER_FIRST_REPLY_SECONDS` | No | `20` | Vote collection window after first valid reply. |
 | `MAX_TURN_MINUTES` | No | `15` | Max wait before reminder repost. |

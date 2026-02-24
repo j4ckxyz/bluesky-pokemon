@@ -191,6 +191,14 @@ export class PokemonBlueskyBot {
       const turnStartMs = this.getTurnStartMs();
 
       if (dedupedVotes.length === 0) {
+        if (this.shouldAttemptIdleAutoSkip(turnStartMs)) {
+          const autoAdvanced = await this.tryAutoSkipWithoutVote();
+          if (autoAdvanced) {
+            await saveState(this.config.statePath, this.state);
+            return;
+          }
+        }
+
         const reminderDue = this.shouldSendReminder(turnStartMs);
         if (reminderDue) {
           await this.handleNoVoteReminder();
@@ -406,6 +414,17 @@ export class PokemonBlueskyBot {
     return lines.join("\n");
   }
 
+  private buildAutoAdvancedSceneText(autoSkippedFrames: number): string {
+    const now = Date.now();
+    const uptimeMs = now - safeDateMs(this.state.startedAt);
+    return [
+      `Turn ${this.state.totalTurns} | Auto-advanced through static/loading scene (no vote).`,
+      `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)} | Uptime: ${formatDurationMs(uptimeMs)}`,
+      `Auto-skip: +${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")}.`,
+      "Reply with the next move in natural language (example: go up, press A, back button). Controls are pinned.",
+    ].join("\n");
+  }
+
   private buildAltText(lastCommand: ButtonCommand | undefined): string {
     const moveText = lastCommand ? commandLabel(lastCommand) : "no move chosen yet";
     return [
@@ -452,6 +471,63 @@ export class PokemonBlueskyBot {
     }
 
     return { framesAdvanced, frame, hash };
+  }
+
+  private shouldAttemptIdleAutoSkip(turnStartMs: number, nowMs = Date.now()): boolean {
+    if (!this.config.autoSkipStaticScreens) {
+      return false;
+    }
+    if (turnStartMs <= 0) {
+      return false;
+    }
+    return nowMs - turnStartMs >= this.config.idleAutoSkipMs;
+  }
+
+  private async tryAutoSkipWithoutVote(): Promise<boolean> {
+    const previousScene = this.state.latestScene;
+    const previousSceneHash = this.state.latestSceneHash;
+    if (!previousScene || !previousSceneHash) {
+      return false;
+    }
+
+    const capturedFrame = this.emulator.captureFrame();
+    const currentSceneHash = hashFrameRgba(capturedFrame.rgba);
+    if (currentSceneHash !== previousSceneHash) {
+      this.state.latestSceneHash = currentSceneHash;
+      return false;
+    }
+
+    const skipResult = this.fastForwardStaticScreen(previousSceneHash, capturedFrame, currentSceneHash);
+    if (skipResult.framesAdvanced <= 0 || skipResult.hash === previousSceneHash) {
+      return false;
+    }
+
+    this.state.totalFrames += skipResult.framesAdvanced;
+
+    const sceneText = this.buildAutoAdvancedSceneText(skipResult.framesAdvanced);
+    const altText = this.buildAltText(this.state.lastCommand);
+    const image = skipResult.frame.png;
+    await Bun.write(this.config.latestFramePath, image);
+
+    const nextScene = await this.bluesky.postScene({
+      text: sceneText,
+      imagePng: image,
+      alt: altText,
+      quotePost: previousScene,
+    });
+
+    this.state.latestScene = nextScene;
+    this.state.latestSceneHash = skipResult.hash;
+    this.state.lastTickAt = new Date().toISOString();
+    this.state.latestScenePostedAt = this.state.lastTickAt;
+
+    await this.closeRepliesSafely(previousScene.uri);
+    await this.maybeSaveGame();
+
+    this.log(
+      `Auto-advanced ${skipResult.framesAdvanced.toLocaleString()} idle ${pluralize(skipResult.framesAdvanced, "frame", "frames")} after no-vote static scene.`,
+    );
+    return true;
   }
 
   private getTurnStartMs(): number {
