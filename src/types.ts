@@ -27,6 +27,7 @@ export interface BotState {
   activeReminderRepostUri?: string;
   lastSaveAt?: string;
   lastTickAt?: string;
+  latestScenePostedAt?: string;
 }
 
 export interface ParsedVote {

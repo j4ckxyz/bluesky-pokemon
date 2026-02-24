@@ -19,6 +19,11 @@ function timestampForFilename(now = new Date()): string {
   return now.toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
 }
 
+function toSafeFilenamePrefix(value: string): string {
+  const cleaned = value.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "");
+  return cleaned || "gameboy";
+}
+
 export class GameboyRunner {
   private readonly gameboy: ServerboyInstance;
 
@@ -89,7 +94,12 @@ export class GameboyRunner {
     return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
   }
 
-  async writeSave(savePath: string, backupDir: string, keepCount: number): Promise<void> {
+  async writeSave(
+    savePath: string,
+    backupDir: string,
+    keepCount: number,
+    backupPrefix: string,
+  ): Promise<void> {
     const saveData = this.gameboy.getSaveData();
     const bytes = Uint8Array.from(saveData);
 
@@ -97,7 +107,8 @@ export class GameboyRunner {
     await Bun.write(savePath, bytes);
 
     await mkdir(backupDir, { recursive: true });
-    const backupPath = path.join(backupDir, `pokemon-red-${timestampForFilename()}.sav`);
+    const safePrefix = toSafeFilenamePrefix(backupPrefix);
+    const backupPath = path.join(backupDir, `${safePrefix}-${timestampForFilename()}.sav`);
     await Bun.write(backupPath, bytes);
 
     if (keepCount <= 0) {
@@ -106,7 +117,7 @@ export class GameboyRunner {
 
     const entries = await readdir(backupDir);
     const backups = entries
-      .filter((name) => name.startsWith("pokemon-red-") && name.endsWith(".sav"))
+      .filter((name) => name.startsWith(`${safePrefix}-`) && name.endsWith(".sav"))
       .sort((left, right) => right.localeCompare(left));
 
     const staleBackups = backups.slice(keepCount);

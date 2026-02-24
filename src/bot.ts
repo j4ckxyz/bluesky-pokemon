@@ -95,6 +95,9 @@ export class PokemonBlueskyBot {
 
     await this.ensureDirectories();
     this.state = await loadState(this.config.statePath);
+    if (this.state.latestScene && !this.state.latestScenePostedAt) {
+      this.state.latestScenePostedAt = this.state.lastTickAt ?? new Date().toISOString();
+    }
 
     await this.bluesky.login();
     await this.emulator.initialize(this.config.savePath);
@@ -127,16 +130,12 @@ export class PokemonBlueskyBot {
     await this.initialize();
 
     while (true) {
-      const waitMs = this.msUntilNextTick();
-      if (waitMs > 0) {
-        this.log(`Next tick in ${(waitMs / 1000).toFixed(0)}s.`);
-      }
-      await Bun.sleep(waitMs);
       try {
         await this.runCycle("scheduled");
       } catch {
-        await Bun.sleep(Math.min(this.config.turnIntervalMs, 30_000));
+        await Bun.sleep(Math.min(this.config.pollIntervalMs, 30_000));
       }
+      await Bun.sleep(this.config.pollIntervalMs);
     }
   }
 
@@ -180,15 +179,24 @@ export class PokemonBlueskyBot {
       }
 
       const dedupedVotes = dedupeVotesByAuthor(parsedVotes);
+      const turnStartMs = this.getTurnStartMs();
+
+      if (dedupedVotes.length === 0) {
+        const reminderDue = this.shouldSendReminder(turnStartMs);
+        if (reminderDue) {
+          await this.handleNoVoteReminder();
+          await saveState(this.config.statePath, this.state);
+        }
+        return;
+      }
+
+      const turnReady = this.isReadyToResolveTurn(dedupedVotes, turnStartMs);
+      if (!turnReady) {
+        return;
+      }
+
       const winningVote = selectWinningVote(dedupedVotes);
       if (!winningVote) {
-        await this.handleNoVoteReminder();
-        this.state.lastTickAt = new Date().toISOString();
-        await saveState(this.config.statePath, this.state);
-
-        if (reason === "scheduled") {
-          this.log("No valid control replies this tick. Scene not advanced.");
-        }
         return;
       }
 
@@ -217,6 +225,7 @@ export class PokemonBlueskyBot {
 
       this.state.latestScene = nextScene;
       this.state.lastTickAt = new Date().toISOString();
+      this.state.latestScenePostedAt = this.state.lastTickAt;
 
       if (previousScene) {
         await this.closeRepliesSafely(previousScene.uri);
@@ -315,15 +324,16 @@ export class PokemonBlueskyBot {
 
     this.state.latestScene = post;
     this.state.lastTickAt = new Date().toISOString();
+    this.state.latestScenePostedAt = this.state.lastTickAt;
   }
 
   private buildControlsText(): string {
     const lines = [
-      "Pokemon Red crowd controls:",
+      `${this.config.gameTitle} crowd controls:`,
       "A=confirm/interact B=cancel/back",
       "U/D/L/R=move (say: go left)",
       "START=menu SELECT=select",
-      "Reply naturally to scene posts. One move is chosen every 15 minutes.",
+      "Reply naturally to scene posts. Moves resolve shortly after replies arrive.",
       this.hashtagLine(),
     ];
 
@@ -332,7 +342,7 @@ export class PokemonBlueskyBot {
 
   private buildInitialSceneText(): string {
     const lines = [
-      "Pokemon Red is live.",
+      `${this.config.gameTitle} is live.`,
       `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)}`,
       "Reply with the next move in plain language (for example: go right, press A, open menu). Controls are pinned.",
       this.hashtagLine(),
@@ -358,7 +368,7 @@ export class PokemonBlueskyBot {
   private buildAltText(lastCommand: ButtonCommand | undefined): string {
     const moveText = lastCommand ? commandLabel(lastCommand) : "no move chosen yet";
     return [
-      "Pokemon Red gameplay screenshot.",
+      `${this.config.gameTitle} gameplay screenshot.`,
       `Turn ${this.state.totalTurns}.`,
       `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)} emulated).`,
       `Most recent chosen control: ${moveText}.`,
@@ -370,12 +380,6 @@ export class PokemonBlueskyBot {
     return this.config.hashtags.map((tag) => `#${tag}`).join(" ");
   }
 
-  private msUntilNextTick(now = Date.now()): number {
-    const lastTickAtMs = safeDateMs(this.state.lastTickAt);
-    const nextTickMs = (lastTickAtMs || now) + this.config.turnIntervalMs;
-    return Math.max(0, nextTickMs - now);
-  }
-
   private async maybeSaveGame(): Promise<void> {
     const nowMs = Date.now();
     const lastSaveMs = safeDateMs(this.state.lastSaveAt);
@@ -384,9 +388,47 @@ export class PokemonBlueskyBot {
       return;
     }
 
-    await this.emulator.writeSave(this.config.savePath, this.config.saveBackupDir, this.config.saveBackupKeep);
+    await this.emulator.writeSave(
+      this.config.savePath,
+      this.config.saveBackupDir,
+      this.config.saveBackupKeep,
+      this.config.saveBasename,
+    );
     this.state.lastSaveAt = new Date(nowMs).toISOString();
     this.log("Saved battery-backed save data.");
+  }
+
+  private getTurnStartMs(): number {
+    return safeDateMs(this.state.latestScenePostedAt ?? this.state.lastTickAt);
+  }
+
+  private shouldSendReminder(turnStartMs: number, nowMs = Date.now()): boolean {
+    if (turnStartMs <= 0) {
+      return false;
+    }
+    return nowMs - turnStartMs >= this.config.maxTurnMs;
+  }
+
+  private isReadyToResolveTurn(votes: ParsedVote[], turnStartMs: number, nowMs = Date.now()): boolean {
+    if (votes.length === 0) {
+      return false;
+    }
+
+    if (turnStartMs > 0 && nowMs - turnStartMs < this.config.minTurnMs) {
+      return false;
+    }
+
+    const firstVoteMs = Math.min(
+      ...votes
+        .map((vote) => safeDateMs(vote.createdAt))
+        .filter((timestamp) => timestamp > 0),
+    );
+
+    if (!Number.isFinite(firstVoteMs) || firstVoteMs <= 0) {
+      return true;
+    }
+
+    return nowMs - firstVoteMs >= this.config.settleAfterFirstReplyMs;
   }
 
   private async closeRepliesSafely(postUri: string): Promise<void> {

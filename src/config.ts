@@ -3,20 +3,25 @@ import path from "node:path";
 
 dotenv.config({ quiet: true });
 
-const DEFAULT_HASHTAGS = ["PokemonRed", "BlueskyPlaysPokemon", "GameBoy"];
 const DEFAULT_LANGS = ["en"];
+const DEFAULT_BASE_HASHTAGS = ["BlueskyPlaysGameBoy", "GameBoy"];
 
 export interface AppConfig {
   identifier: string;
   appPassword: string;
   serviceUrl: string;
+  gameTitle: string;
   romPath: string;
+  saveBasename: string;
   savePath: string;
   statePath: string;
   latestFramePath: string;
   saveBackupDir: string;
   saveBackupKeep: number;
-  turnIntervalMs: number;
+  pollIntervalMs: number;
+  maxTurnMs: number;
+  minTurnMs: number;
+  settleAfterFirstReplyMs: number;
   saveIntervalMs: number;
   framesPerTurn: number;
   buttonHoldFrames: number;
@@ -89,21 +94,33 @@ function parseList(name: string, fallback: string[]): string[] {
   return parsed.length > 0 ? parsed : fallback;
 }
 
-function normalizeHashtags(tags: string[]): string[] {
+function slugToTag(input: string): string {
+  return input.replace(/[^a-z0-9]/gi, "");
+}
+
+function defaultHashtagsForGame(gameTitle: string): string[] {
+  const gameTag = slugToTag(gameTitle);
+  const tags = gameTag ? [gameTag, ...DEFAULT_BASE_HASHTAGS] : DEFAULT_BASE_HASHTAGS;
+  return Array.from(new Set(tags));
+}
+
+function normalizeHashtags(tags: string[], gameTitle: string): string[] {
   const cleaned = tags
     .map((tag) => tag.replace(/^#+/, "").trim())
     .filter((tag) => tag.length > 0);
 
-  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : [...DEFAULT_HASHTAGS];
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : defaultHashtagsForGame(gameTitle);
 }
 
 export function loadConfig(): AppConfig {
   const cwd = process.cwd();
   const dataDir = path.resolve(cwd, process.env.DATA_DIR?.trim() || "./data");
   const dryRun = parseBoolean("DRY_RUN", false);
+  const gameTitle = process.env.GAME_TITLE?.trim() || "Pokemon Red";
 
   const romPath = path.resolve(cwd, process.env.ROM_PATH?.trim() || "./roms/pokemon-red.gb");
-  const savePath = path.resolve(cwd, process.env.SAVE_PATH?.trim() || `${dataDir}/pokemon-red.sav`);
+  const saveBasename = process.env.SAVE_BASENAME?.trim() || path.parse(romPath).name || "gameboy";
+  const savePath = path.resolve(cwd, process.env.SAVE_PATH?.trim() || `${dataDir}/${saveBasename}.sav`);
   const statePath = path.resolve(cwd, process.env.STATE_PATH?.trim() || `${dataDir}/bot-state.json`);
   const latestFramePath = path.resolve(
     cwd,
@@ -111,7 +128,10 @@ export function loadConfig(): AppConfig {
   );
   const saveBackupDir = path.resolve(cwd, process.env.SAVE_BACKUP_DIR?.trim() || `${dataDir}/save-backups`);
 
-  const turnIntervalMinutes = parsePositiveInt("TURN_INTERVAL_MINUTES", 15);
+  const pollIntervalSeconds = parsePositiveInt("POLL_INTERVAL_SECONDS", 20);
+  const maxTurnMinutes = parsePositiveInt("MAX_TURN_MINUTES", parsePositiveInt("TURN_INTERVAL_MINUTES", 15));
+  const minTurnSeconds = parsePositiveInt("MIN_TURN_SECONDS", 30);
+  const settleAfterFirstReplySeconds = parsePositiveInt("SETTLE_AFTER_FIRST_REPLY_SECONDS", 20);
   const saveIntervalMinutes = parsePositiveInt("SAVE_INTERVAL_MINUTES", 60);
   const saveBackupKeep = parseNonNegativeInt("SAVE_BACKUP_KEEP", 168);
   const framesPerTurn = parsePositiveInt("FRAMES_PER_TURN", 120);
@@ -122,23 +142,34 @@ export function loadConfig(): AppConfig {
     throw new Error("BUTTON_HOLD_FRAMES cannot be greater than FRAMES_PER_TURN");
   }
 
+  if (minTurnSeconds > maxTurnMinutes * 60) {
+    throw new Error("MIN_TURN_SECONDS cannot be greater than MAX_TURN_MINUTES * 60");
+  }
+
   return {
     identifier: dryRun ? process.env.BLUESKY_IDENTIFIER?.trim() || "dry-run.local" : required("BLUESKY_IDENTIFIER"),
-    appPassword: dryRun ? process.env.BLUESKY_APP_PASSWORD?.trim() || "dry-run-password" : required("BLUESKY_APP_PASSWORD"),
+    appPassword: dryRun
+      ? process.env.BLUESKY_APP_PASSWORD?.trim() || "dry-run-password"
+      : required("BLUESKY_APP_PASSWORD"),
     serviceUrl: process.env.BLUESKY_SERVICE_URL?.trim() || "https://bsky.social",
+    gameTitle,
     romPath,
+    saveBasename,
     savePath,
     statePath,
     latestFramePath,
     saveBackupDir,
     saveBackupKeep,
-    turnIntervalMs: turnIntervalMinutes * 60_000,
+    pollIntervalMs: pollIntervalSeconds * 1000,
+    maxTurnMs: maxTurnMinutes * 60_000,
+    minTurnMs: minTurnSeconds * 1000,
+    settleAfterFirstReplyMs: settleAfterFirstReplySeconds * 1000,
     saveIntervalMs: saveIntervalMinutes * 60_000,
     framesPerTurn,
     buttonHoldFrames,
     initialWarmupFrames,
     langs: parseList("POST_LANGS", DEFAULT_LANGS),
-    hashtags: normalizeHashtags(parseList("POST_HASHTAGS", DEFAULT_HASHTAGS)),
+    hashtags: normalizeHashtags(parseList("POST_HASHTAGS", []), gameTitle),
     repostEveryTick: parseBoolean("REPOST_EVERY_TICK", false),
     dryRun,
   };
