@@ -23,7 +23,7 @@ It runs a Game Boy ROM headlessly, posts scene screenshots, reads natural-langua
 2. Read direct replies on the latest scene post.
 3. Parse valid controls from natural language.
 4. Keep one vote per user.
-5. Pick winning move by vote count (tie: earliest vote).
+5. Pick winning move by vote count (tie: random among top moves).
 6. Advance emulator frames and post next screenshot scene.
 7. If no valid vote, repost current scene as reminder.
 
@@ -131,6 +131,7 @@ journalctl -u bluesky-pokemon -f
 - CI workflow runs TypeScript checks on push/PR: `.github/workflows/ci.yml`.
 - Docker assets included: `Dockerfile`, `docker-compose.yml`, `.dockerignore`.
 - ROM/save files are gitignored by default.
+- Recommended pinned-post copy is included in `docs/PINNED_POST_TEMPLATE.md`.
 
 ## Development
 

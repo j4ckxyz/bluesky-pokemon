@@ -58,6 +58,14 @@ const PHRASE_TO_COMMAND: Record<string, ButtonCommand> = {
 
 const BUTTON_ORDER: ButtonCommand[] = [...BUTTON_COMMANDS];
 
+function pickRandom<T>(items: T[]): T | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+  const index = Math.floor(Math.random() * items.length);
+  return items[index];
+}
+
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -127,35 +135,17 @@ export function selectWinningVote(votes: ParsedVote[]): VoteResult | undefined {
     number
   >;
 
-  const firstSeen = new Map<ButtonCommand, number>();
-
   for (const vote of votes) {
     voteBreakdown[vote.command] += 1;
-
-    const createdAt = Date.parse(vote.createdAt);
-    const timestamp = Number.isFinite(createdAt) ? createdAt : Number.MAX_SAFE_INTEGER;
-
-    if (!firstSeen.has(vote.command) || timestamp < (firstSeen.get(vote.command) ?? Number.MAX_SAFE_INTEGER)) {
-      firstSeen.set(vote.command, timestamp);
-    }
   }
 
-  const ranked = BUTTON_ORDER.filter((command) => voteBreakdown[command] > 0).sort((left, right) => {
-    const countDiff = voteBreakdown[right] - voteBreakdown[left];
-    if (countDiff !== 0) {
-      return countDiff;
-    }
+  const maxVotes = Math.max(...BUTTON_ORDER.map((command) => voteBreakdown[command]));
+  if (!Number.isFinite(maxVotes) || maxVotes <= 0) {
+    return undefined;
+  }
 
-    const leftSeen = firstSeen.get(left) ?? Number.MAX_SAFE_INTEGER;
-    const rightSeen = firstSeen.get(right) ?? Number.MAX_SAFE_INTEGER;
-    if (leftSeen !== rightSeen) {
-      return leftSeen - rightSeen;
-    }
-
-    return BUTTON_ORDER.indexOf(left) - BUTTON_ORDER.indexOf(right);
-  });
-
-  const command = ranked[0];
+  const tiedTop = BUTTON_ORDER.filter((command) => voteBreakdown[command] === maxVotes);
+  const command = pickRandom(tiedTop);
   if (!command) {
     return undefined;
   }
