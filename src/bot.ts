@@ -192,8 +192,8 @@ export class PokemonBlueskyBot {
 
       if (dedupedVotes.length === 0) {
         if (this.shouldAttemptIdleAutoSkip(turnStartMs)) {
-          const autoAdvanced = await this.tryAutoSkipWithoutVote();
-          if (autoAdvanced) {
+          const autoAdvanceOutcome = await this.tryAutoSkipWithoutVote();
+          if (autoAdvanceOutcome !== "none") {
             await saveState(this.config.statePath, this.state);
             return;
           }
@@ -266,6 +266,7 @@ export class PokemonBlueskyBot {
 
       this.state.latestScene = nextScene;
       this.state.latestSceneHash = currentSceneHash;
+      this.state.lastAutoSkipPostAt = undefined;
       this.state.lastTickAt = new Date().toISOString();
       this.state.latestScenePostedAt = this.state.lastTickAt;
 
@@ -367,6 +368,7 @@ export class PokemonBlueskyBot {
 
     this.state.latestScene = post;
     this.state.latestSceneHash = hashFrameRgba(frame.rgba);
+    this.state.lastAutoSkipPostAt = undefined;
     this.state.lastTickAt = new Date().toISOString();
     this.state.latestScenePostedAt = this.state.lastTickAt;
   }
@@ -468,31 +470,49 @@ export class PokemonBlueskyBot {
     return nowMs - turnStartMs >= this.config.idleAutoSkipMs;
   }
 
-  private async tryAutoSkipWithoutVote(): Promise<boolean> {
+  private async tryAutoSkipWithoutVote(): Promise<"none" | "advanced" | "posted"> {
     const previousScene = this.state.latestScene;
     const previousSceneHash = this.state.latestSceneHash;
     if (!previousScene || !previousSceneHash) {
-      return false;
+      return "none";
     }
 
     const capturedFrame = this.emulator.captureFrame();
     const currentSceneHash = hashFrameRgba(capturedFrame.rgba);
     if (currentSceneHash !== previousSceneHash) {
       this.state.latestSceneHash = currentSceneHash;
-      return false;
+      return "none";
     }
 
     const skipResult = this.fastForwardStaticScreen(previousSceneHash, capturedFrame, currentSceneHash);
     if (skipResult.framesAdvanced <= 0 || skipResult.hash === previousSceneHash) {
-      return false;
+      return "none";
     }
 
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const lastAutoSkipPostMs = safeDateMs(this.state.lastAutoSkipPostAt);
+    const withinPostCooldown =
+      lastAutoSkipPostMs > 0 && nowMs - lastAutoSkipPostMs < this.config.autoSkipPostCooldownMs;
+
     this.state.totalFrames += skipResult.framesAdvanced;
+    this.state.latestSceneHash = skipResult.hash;
+
+    if (withinPostCooldown) {
+      this.state.lastTickAt = nowIso;
+      await this.maybeSaveGame();
+      this.log(
+        `Auto-advanced ${skipResult.framesAdvanced.toLocaleString()} idle ${pluralize(skipResult.framesAdvanced, "frame", "frames")} (post suppressed by cooldown).`,
+      );
+      return "advanced";
+    }
 
     const sceneText = this.buildAutoAdvancedSceneText(skipResult.framesAdvanced);
     const altText = this.buildAltText(this.state.lastCommand);
     const image = skipResult.frame.png;
     await Bun.write(this.config.latestFramePath, image);
+
+    await this.clearReminderRepost();
 
     const nextScene = await this.bluesky.postScene({
       text: sceneText,
@@ -502,9 +522,9 @@ export class PokemonBlueskyBot {
     });
 
     this.state.latestScene = nextScene;
-    this.state.latestSceneHash = skipResult.hash;
-    this.state.lastTickAt = new Date().toISOString();
-    this.state.latestScenePostedAt = this.state.lastTickAt;
+    this.state.lastAutoSkipPostAt = nowIso;
+    this.state.lastTickAt = nowIso;
+    this.state.latestScenePostedAt = nowIso;
 
     await this.closeRepliesSafely(previousScene.uri);
     await this.maybeSaveGame();
@@ -512,7 +532,7 @@ export class PokemonBlueskyBot {
     this.log(
       `Auto-advanced ${skipResult.framesAdvanced.toLocaleString()} idle ${pluralize(skipResult.framesAdvanced, "frame", "frames")} after no-vote static scene.`,
     );
-    return true;
+    return "posted";
   }
 
   private getTurnStartMs(): number {

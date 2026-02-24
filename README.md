@@ -28,6 +28,7 @@ Pokemon Red is the default setup, but you can point it at another ROM and set `G
 5. Resolve winner and post next scene.
 6. If no valid reply by `2m` (`MAX_TURN_MINUTES`), repost a reminder.
 7. If no valid reply and scene is static for `20s`, auto-advance loading/static frames (`IDLE_AUTO_SKIP_SECONDS`).
+8. Auto-skip status posts are throttled (`AUTO_SKIP_POST_COOLDOWN_SECONDS`) to avoid feed spam during loading.
 
 This keeps gameplay much faster than fixed 15-minute turns while still letting multiple people vote.
 
@@ -144,6 +145,7 @@ journalctl -u bluesky-pokemon -f
 | `AUTO_SKIP_STATIC_SCREENS` | No | `true` | If enabled, auto-advances extra frames when a move lands on a static/loading scene. |
 | `AUTO_SKIP_MAX_FRAMES` | No | `900` | Max extra no-input frames per turn for static/loading auto-skip. |
 | `AUTO_SKIP_STEP_FRAMES` | No | `120` | Chunk size for each auto-skip advance step. |
+| `AUTO_SKIP_POST_COOLDOWN_SECONDS` | No | `180` | Minimum seconds between no-vote auto-skip scene posts. |
 | `POST_LANGS` | No | `en` | Post language tags (comma-separated). |
 | `POST_HASHTAGS` | No | Derived from game title + generic tags | Hidden Bluesky `tags` added to posts for discoverability. |
 | `REPOST_EVERY_TICK` | No | `false` | If `true`, repost reminder every poll cycle once max wait is exceeded. |
@@ -155,6 +157,7 @@ journalctl -u bluesky-pokemon -f
 - Adds `.env` `POST_HASHTAGS` as Bluesky `tags` by default (hidden/outline hashtags, no visible hashtag line).
 - Uploads scene PNG as `app.bsky.embed.images` with alt text.
 - Auto-skips static/loading scenes by fast-forwarding no-input frames after a move (enabled by default, configurable).
+- Throttles no-vote auto-skip scene posts to keep the feed readable during long loading sequences.
 - Uses `app.bsky.feed.threadgate` with empty `allow` to close old scene replies.
 - Pins a controls post on the account profile.
 
