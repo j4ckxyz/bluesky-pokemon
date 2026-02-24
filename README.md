@@ -19,14 +19,15 @@ Pokemon Red is the default setup, but you can point it at another ROM and set `G
 - Screenshot embeds include alt text and runtime stats.
 - Hourly save writes + rolling backup retention.
 
-## Real-time turn model (default)
+## Real-time turn model (recommended `.env.example` preset)
 
-1. Poll for replies every `20s`.
+1. Poll for replies every `5s`.
 2. Keep one vote per user.
-3. Wait at least `30s` from scene post (`MIN_TURN_SECONDS`).
-4. After first valid reply, wait `20s` more for additional votes (`SETTLE_AFTER_FIRST_REPLY_SECONDS`).
+3. Wait at least `8s` from scene post (`MIN_TURN_SECONDS`).
+4. After first valid reply, wait `6s` more for additional votes (`SETTLE_AFTER_FIRST_REPLY_SECONDS`).
 5. Resolve winner and post next scene.
-6. If no valid reply by `15m` (`MAX_TURN_MINUTES`), repost a reminder.
+6. If no valid reply by `2m` (`MAX_TURN_MINUTES`), repost a reminder.
+7. If no valid reply and scene is static for `20s`, auto-advance loading/static frames (`IDLE_AUTO_SKIP_SECONDS`).
 
 This keeps gameplay much faster than fixed 15-minute turns while still letting multiple people vote.
 
