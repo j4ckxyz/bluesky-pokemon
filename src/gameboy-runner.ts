@@ -6,6 +6,12 @@ import type { ButtonCommand } from "./types";
 
 const SCREEN_WIDTH = 160;
 const SCREEN_HEIGHT = 144;
+const SCREEN_BYTES = SCREEN_WIDTH * SCREEN_HEIGHT * 4;
+
+export interface CapturedFrame {
+  rgba: Uint8Array;
+  png: Uint8Array;
+}
 
 interface ServerboyInstance {
   loadRom(rom: Buffer | Uint8Array, saveData?: number[]): boolean;
@@ -74,24 +80,16 @@ export class GameboyRunner {
     return advanced;
   }
 
+  captureFrame(): CapturedFrame {
+    const rgba = this.readScreenBuffer();
+    return {
+      rgba,
+      png: this.encodePng(rgba),
+    };
+  }
+
   capturePng(): Uint8Array {
-    const screen = this.gameboy.getScreen();
-    if (!screen || screen.length === 0) {
-      throw new Error("Emulator returned an empty screen buffer");
-    }
-
-    const expectedBytes = SCREEN_WIDTH * SCREEN_HEIGHT * 4;
-    if (screen.length < expectedBytes) {
-      throw new Error(`Screen buffer is too small: ${screen.length} bytes`);
-    }
-
-    const png = new PNG({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
-    for (let i = 0; i < expectedBytes; i++) {
-      png.data[i] = screen[i] ?? 0;
-    }
-
-    const encoded = PNG.sync.write(png);
-    return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
+    return this.captureFrame().png;
   }
 
   async writeSave(
@@ -124,5 +122,33 @@ export class GameboyRunner {
     for (const stale of staleBackups) {
       await rm(path.join(backupDir, stale), { force: true });
     }
+  }
+
+  private readScreenBuffer(): Uint8Array {
+    const screen = this.gameboy.getScreen();
+    if (!screen || screen.length === 0) {
+      throw new Error("Emulator returned an empty screen buffer");
+    }
+
+    const bytes = Uint8Array.from(screen);
+    if (bytes.length < SCREEN_BYTES) {
+      throw new Error(`Screen buffer is too small: ${bytes.length} bytes`);
+    }
+
+    return bytes.length === SCREEN_BYTES ? bytes : bytes.slice(0, SCREEN_BYTES);
+  }
+
+  private encodePng(rgba: Uint8Array): Uint8Array {
+    if (rgba.length < SCREEN_BYTES) {
+      throw new Error(`RGBA frame is too small: ${rgba.length} bytes`);
+    }
+
+    const png = new PNG({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
+    for (let i = 0; i < SCREEN_BYTES; i++) {
+      png.data[i] = rgba[i] ?? 0;
+    }
+
+    const encoded = PNG.sync.write(png);
+    return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
   }
 }

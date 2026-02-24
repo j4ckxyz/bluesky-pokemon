@@ -26,6 +26,9 @@ export interface AppConfig {
   framesPerTurn: number;
   buttonHoldFrames: number;
   initialWarmupFrames: number;
+  autoSkipStaticScreens: boolean;
+  autoSkipMaxFrames: number;
+  autoSkipStepFrames: number;
   langs: string[];
   hashtags: string[];
   repostEveryTick: boolean;
@@ -137,6 +140,9 @@ export function loadConfig(): AppConfig {
   const framesPerTurn = parsePositiveInt("FRAMES_PER_TURN", 120);
   const buttonHoldFrames = parsePositiveInt("BUTTON_HOLD_FRAMES", 3);
   const initialWarmupFrames = parsePositiveInt("INITIAL_WARMUP_FRAMES", 24);
+  const autoSkipStaticScreens = parseBoolean("AUTO_SKIP_STATIC_SCREENS", true);
+  const autoSkipMaxFrames = parsePositiveInt("AUTO_SKIP_MAX_FRAMES", 900);
+  const autoSkipStepFrames = parsePositiveInt("AUTO_SKIP_STEP_FRAMES", 120);
 
   if (buttonHoldFrames > framesPerTurn) {
     throw new Error("BUTTON_HOLD_FRAMES cannot be greater than FRAMES_PER_TURN");
@@ -168,6 +174,9 @@ export function loadConfig(): AppConfig {
     framesPerTurn,
     buttonHoldFrames,
     initialWarmupFrames,
+    autoSkipStaticScreens,
+    autoSkipMaxFrames,
+    autoSkipStepFrames,
     langs: parseList("POST_LANGS", DEFAULT_LANGS),
     hashtags: normalizeHashtags(parseList("POST_HASHTAGS", []), gameTitle),
     repostEveryTick: parseBoolean("REPOST_EVERY_TICK", false),

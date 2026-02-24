@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { BlueskyService } from "./bluesky";
 import type { AppConfig } from "./config";
 import { commandLabel, parseNaturalCommand, selectWinningVote } from "./controls";
-import { GameboyRunner } from "./gameboy-runner";
+import { type CapturedFrame, GameboyRunner } from "./gameboy-runner";
 import { createDefaultState, loadState, saveState } from "./state-store";
 import { BUTTON_COMMANDS, type BotState, type ButtonCommand, type ParsedVote, type VoteResult } from "./types";
 
@@ -56,6 +57,10 @@ function safeDateMs(value: string | undefined): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function hashFrameRgba(rgba: Uint8Array): string {
+  return createHash("sha1").update(rgba).digest("hex");
+}
+
 function dedupeVotesByAuthor(votes: ParsedVote[]): ParsedVote[] {
   const byAuthor = new Map<string, ParsedVote>();
   const sorted = [...votes].sort((left, right) => safeDateMs(left.createdAt) - safeDateMs(right.createdAt));
@@ -102,6 +107,9 @@ export class PokemonBlueskyBot {
 
     await this.bluesky.login();
     await this.emulator.initialize(this.config.savePath);
+    if (this.state.latestScene && !this.state.latestSceneHash) {
+      this.state.latestSceneHash = hashFrameRgba(this.emulator.captureFrame().rgba);
+    }
 
     await this.ensureControlsPostPinned();
     await saveState(this.config.statePath, this.state);
@@ -212,9 +220,32 @@ export class PokemonBlueskyBot {
       this.state.totalTurns += 1;
       this.state.lastCommand = winningVote.command;
 
-      const sceneText = this.buildSceneText(winningVote);
+      const previousSceneHash = this.state.latestSceneHash;
+      let autoSkippedFrames = 0;
+      let capturedFrame = this.emulator.captureFrame();
+      let currentSceneHash = hashFrameRgba(capturedFrame.rgba);
+
+      if (
+        this.config.autoSkipStaticScreens &&
+        previousSceneHash &&
+        currentSceneHash === previousSceneHash
+      ) {
+        const skipResult = this.fastForwardStaticScreen(previousSceneHash, capturedFrame, currentSceneHash);
+        autoSkippedFrames = skipResult.framesAdvanced;
+        capturedFrame = skipResult.frame;
+        currentSceneHash = skipResult.hash;
+
+        if (autoSkippedFrames > 0) {
+          this.state.totalFrames += autoSkippedFrames;
+          this.log(
+            `Auto-skipped ${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")} on a static scene.`,
+          );
+        }
+      }
+
+      const sceneText = this.buildSceneText(winningVote, autoSkippedFrames);
       const altText = this.buildAltText(winningVote.command);
-      const image = this.emulator.capturePng();
+      const image = capturedFrame.png;
       await Bun.write(this.config.latestFramePath, image);
 
       const previousScene = this.state.latestScene;
@@ -226,6 +257,7 @@ export class PokemonBlueskyBot {
       });
 
       this.state.latestScene = nextScene;
+      this.state.latestSceneHash = currentSceneHash;
       this.state.lastTickAt = new Date().toISOString();
       this.state.latestScenePostedAt = this.state.lastTickAt;
 
@@ -315,7 +347,8 @@ export class PokemonBlueskyBot {
     const warmedFrames = this.emulator.advanceFrames(this.config.initialWarmupFrames);
     this.state.totalFrames += warmedFrames;
 
-    const image = this.emulator.capturePng();
+    const frame = this.emulator.captureFrame();
+    const image = frame.png;
     await Bun.write(this.config.latestFramePath, image);
 
     const post = await this.bluesky.postScene({
@@ -325,6 +358,7 @@ export class PokemonBlueskyBot {
     });
 
     this.state.latestScene = post;
+    this.state.latestSceneHash = hashFrameRgba(frame.rgba);
     this.state.lastTickAt = new Date().toISOString();
     this.state.latestScenePostedAt = this.state.lastTickAt;
   }
@@ -351,7 +385,7 @@ export class PokemonBlueskyBot {
     return lines.join("\n");
   }
 
-  private buildSceneText(voteResult: VoteResult): string {
+  private buildSceneText(voteResult: VoteResult, autoSkippedFrames: number): string {
     const now = Date.now();
     const uptimeMs = now - safeDateMs(this.state.startedAt);
     const lines = [
@@ -360,6 +394,14 @@ export class PokemonBlueskyBot {
       `Vote split: ${formatVotes(voteResult)}`,
       "Reply with the next move in natural language (example: go up, press A, back button). Controls are pinned.",
     ];
+
+    if (autoSkippedFrames > 0) {
+      lines.splice(
+        2,
+        0,
+        `Auto-skip: +${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")} to pass a static/loading screen.`,
+      );
+    }
 
     return lines.join("\n");
   }
@@ -391,6 +433,25 @@ export class PokemonBlueskyBot {
     );
     this.state.lastSaveAt = new Date(nowMs).toISOString();
     this.log("Saved battery-backed save data.");
+  }
+
+  private fastForwardStaticScreen(
+    referenceHash: string,
+    currentFrame: CapturedFrame,
+    currentHash: string,
+  ): { framesAdvanced: number; frame: CapturedFrame; hash: string } {
+    let framesAdvanced = 0;
+    let frame = currentFrame;
+    let hash = currentHash;
+
+    while (framesAdvanced < this.config.autoSkipMaxFrames && hash === referenceHash) {
+      const stepFrames = Math.min(this.config.autoSkipStepFrames, this.config.autoSkipMaxFrames - framesAdvanced);
+      framesAdvanced += this.emulator.advanceFrames(stepFrames);
+      frame = this.emulator.captureFrame();
+      hash = hashFrameRgba(frame.rgba);
+    }
+
+    return { framesAdvanced, frame, hash };
   }
 
   private getTurnStartMs(): number {

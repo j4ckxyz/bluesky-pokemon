@@ -139,6 +139,9 @@ journalctl -u bluesky-pokemon -f
 | `FRAMES_PER_TURN` | No | `120` | Frames advanced per selected move. |
 | `BUTTON_HOLD_FRAMES` | No | `3` | Frames to hold chosen button. |
 | `INITIAL_WARMUP_FRAMES` | No | `24` | Frames run before first scene post. |
+| `AUTO_SKIP_STATIC_SCREENS` | No | `true` | If enabled, auto-advances extra frames when a move lands on a static/loading scene. |
+| `AUTO_SKIP_MAX_FRAMES` | No | `900` | Max extra no-input frames per turn for static/loading auto-skip. |
+| `AUTO_SKIP_STEP_FRAMES` | No | `120` | Chunk size for each auto-skip advance step. |
 | `POST_LANGS` | No | `en` | Post language tags (comma-separated). |
 | `POST_HASHTAGS` | No | Derived from game title + generic tags | Hidden Bluesky `tags` added to posts for discoverability. |
 | `REPOST_EVERY_TICK` | No | `false` | If `true`, repost reminder every poll cycle once max wait is exceeded. |
@@ -149,6 +152,7 @@ journalctl -u bluesky-pokemon -f
 - Uses `RichText.detectFacets()` for proper facets (links/mentions/hashtags in text).
 - Adds `.env` `POST_HASHTAGS` as Bluesky `tags` by default (hidden/outline hashtags, no visible hashtag line).
 - Uploads scene PNG as `app.bsky.embed.images` with alt text.
+- Auto-skips static/loading scenes by fast-forwarding no-input frames after a move (enabled by default, configurable).
 - Uses `app.bsky.feed.threadgate` with empty `allow` to close old scene replies.
 - Pins a controls post on the account profile.
 
