@@ -373,11 +373,10 @@ export class PokemonBlueskyBot {
 
   private buildControlsText(): string {
     const lines = [
-      `${this.config.gameTitle} crowd controls:`,
-      "A=confirm/interact B=cancel/back",
-      "U/D/L/R=move (say: go left)",
-      "START=menu SELECT=select",
-      "Reply naturally to scene posts. Moves resolve shortly after replies arrive.",
+      `${this.config.gameTitle} controls`,
+      "A=confirm  B=back",
+      "U/D/L/R=move  START=menu  SELECT=select",
+      "Reply to the latest scene with one move.",
     ];
 
     return lines.join("\n");
@@ -386,42 +385,28 @@ export class PokemonBlueskyBot {
   private buildInitialSceneText(): string {
     const lines = [
       `${this.config.gameTitle} is live.`,
-      `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)}`,
-      "Reply with the next move in plain language (for example: go right, press A, open menu). Controls are pinned.",
+      `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)})`,
+      "Reply with the next move. Controls are pinned.",
     ];
 
     return lines.join("\n");
   }
 
   private buildSceneText(voteResult: VoteResult, autoSkippedFrames: number): string {
-    const now = Date.now();
-    const uptimeMs = now - safeDateMs(this.state.startedAt);
-    const lines = [
-      `Turn ${this.state.totalTurns} | Chosen move: ${commandLabel(voteResult.command)} (${voteResult.voteCount} ${pluralize(voteResult.voteCount, "vote", "votes")})`,
-      `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)} | Uptime: ${formatDurationMs(uptimeMs)}`,
-      `Vote split: ${formatVotes(voteResult)}`,
-      "Reply with the next move in natural language (example: go up, press A, back button). Controls are pinned.",
-    ];
-
-    if (autoSkippedFrames > 0) {
-      lines.splice(
-        2,
-        0,
-        `Auto-skip: +${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")} to pass a static/loading screen.`,
-      );
-    }
-
-    return lines.join("\n");
+    const skipSuffix =
+      autoSkippedFrames > 0 ? ` • +${autoSkippedFrames.toLocaleString()} skip` : "";
+    return [
+      `T${this.state.totalTurns} • ${commandLabel(voteResult.command)} (${voteResult.voteCount} ${pluralize(voteResult.voteCount, "vote", "votes")})${skipSuffix}`,
+      `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)})`,
+      "Reply with the next move.",
+    ].join("\n");
   }
 
   private buildAutoAdvancedSceneText(autoSkippedFrames: number): string {
-    const now = Date.now();
-    const uptimeMs = now - safeDateMs(this.state.startedAt);
     return [
-      `Turn ${this.state.totalTurns} | Auto-advanced through static/loading scene (no vote).`,
-      `Frames: ${this.state.totalFrames.toLocaleString()} | Emulated: ${formatDurationFromFrames(this.state.totalFrames)} | Uptime: ${formatDurationMs(uptimeMs)}`,
-      `Auto-skip: +${autoSkippedFrames.toLocaleString()} idle ${pluralize(autoSkippedFrames, "frame", "frames")}.`,
-      "Reply with the next move in natural language (example: go up, press A, back button). Controls are pinned.",
+      `T${this.state.totalTurns} • Auto-skip loading (+${autoSkippedFrames.toLocaleString()}f)`,
+      `Frame ${this.state.totalFrames.toLocaleString()} (${formatDurationFromFrames(this.state.totalFrames)})`,
+      "Reply with the next move.",
     ].join("\n");
   }
 
